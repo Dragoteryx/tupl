@@ -2,6 +2,9 @@
 #![no_std]
 
 use core::convert::Infallible;
+mod private {
+	pub trait Sealed: Sized {}
+}
 
 /// Whether or not this tuple type is the empty tuple.
 /// # Examples
@@ -14,8 +17,9 @@ pub const fn is_unit<T: Tuple>() -> bool {
 	T::ARITY == 0
 }
 
-/// A trait representing tuples. It is only implemented for tuples of arity 0 to 50.
-pub trait Tuple: Sized {
+/// A trait representing tuples. It is only implemented for tuples of arity 0 to 50.\
+/// This trait is **sealed** and as such not meant to be implemented.
+pub trait Tuple: private::Sealed {
 	type Append<T>: Tuple;
 	type Prepend<T>: Tuple;
 
@@ -47,6 +51,7 @@ pub trait Tuple: Sized {
 	fn prepend<T>(self, value: T) -> Self::Prepend<T>;
 }
 
+impl private::Sealed for () {}
 impl Tuple for () {
 	type Append<T> = (T,);
 	type Prepend<T> = (T,);
@@ -65,6 +70,7 @@ macro_rules! impl_tuple {
 	($t0:ident($arity0:literal) $(, $tn:ident($arityn:literal))* $(,)?) => {
 		impl_tuple_recursion!($($tn($arityn)),*);
 
+		impl<$t0 $(, $tn)*> private::Sealed for ($t0, $($tn),*) {}
 		impl<$t0 $(, $tn)*> Tuple for ($t0, $($tn),*) {
 			type Prepend<T> = Infallible;
 			type Append<T> = Infallible;
@@ -88,17 +94,19 @@ macro_rules! impl_tuple_recursion {
 	($t0:ident($arity0:literal) $(, $tn:ident($arityn:literal))* $(,)?) => {
 		impl_tuple_recursion!($($tn($arityn)),*);
 
-		#[allow(non_snake_case)]
+		impl<$t0 $(, $tn)*> private::Sealed for ($t0, $($tn),*) {}
 		impl<$t0 $(, $tn)*> Tuple for ($t0, $($tn),*) {
 			type Append<T> = ($t0, $($tn,)* T);
 			type Prepend<T> = (T, $t0 $(, $tn)*);
 			const ARITY: usize = $arity0;
 
+			#[allow(non_snake_case)]
 			fn append<T>(self, value: T) -> Self::Append<T> {
 				let ($t0, $($tn,)*) = self;
 				($t0, $($tn,)* value)
 			}
 
+			#[allow(non_snake_case)]
 			fn prepend<T>(self, value: T) -> Self::Prepend<T> {
 				let ($t0, $($tn,)*) = self;
 				(value, $t0 $(,$tn)*)
@@ -130,7 +138,7 @@ impl_tuple!(
 	Ζ(31),
 	Ε(30),
 	Δ(29),
-	Γ(28),                     
+	Γ(28),
 	Β(27),
 	Α(26),
 	Z(25),
@@ -160,6 +168,7 @@ impl_tuple!(
 	A(1),
 );
 
+impl private::Sealed for Infallible {}
 impl Tuple for Infallible {
 	type Prepend<T> = Infallible;
 	type Append<T> = Infallible;
