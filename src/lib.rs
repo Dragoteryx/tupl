@@ -1,6 +1,8 @@
 #![allow(confusable_idents)]
 #![no_std]
 
+//! A small library for handling Rust tuples using traits.
+
 use core::convert::Infallible;
 mod private {
 	pub trait Sealed: Sized {}

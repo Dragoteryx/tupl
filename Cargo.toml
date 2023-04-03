@@ -1,4 +1,10 @@
 [package]
 name = "tupl"
+description = "A small library for handling Rust tuples using traits."
+authors = ["Dragoteryx"]
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.65"
+repository = "https://github.com/Dragoteryx/tupl"
+license = "MIT"
+keywords = ["tuple"]
