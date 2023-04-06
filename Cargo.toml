@@ -2,7 +2,7 @@
 name = "tupl"
 description = "A small library for handling Rust tuples using traits."
 authors = ["Dragoteryx"]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 rust-version = "1.65"
 repository = "https://github.com/Dragoteryx/tupl"
