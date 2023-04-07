@@ -208,69 +208,21 @@ impl<A> NonEmptyTuple for (A,) {
 	}
 }
 
-impl<A, Ω> private::Sealed for (A, Ω) {}
-impl<A, Ω> Tuple for (A, Ω) {
-	const ARITY: usize = 2;
-}
-
-impl<A, Ω> GrowableTuple for (A, Ω) {
-	type Append<T> = (A, Ω, T);
-	type Prepend<T> = (T, A, Ω);
-
-	fn append<T>(self, value: T) -> Self::Append<T> {
-		(self.0, self.1, value)
-	}
-
-	fn prepend<T>(self, value: T) -> Self::Prepend<T> {
-		(value, self.0, self.1)
-	}
-}
-
-impl<A, Ω> NonEmptyTuple for (A, Ω) {
-	type Head = A;
-	type Tail = Ω;
-	type TruncateHead = (Ω,);
-	type TruncateTail = (A,);
-
-	fn head(&self) -> &Self::Head {
-		&self.0
-	}
-
-	fn head_mut(&mut self) -> &mut Self::Head {
-		&mut self.0
-	}
-
-	fn tail(&self) -> &Self::Tail {
-		&self.1
-	}
-
-	fn tail_mut(&mut self) -> &mut Self::Tail {
-		&mut self.1
-	}
-
-	fn truncate_head(self) -> (Self::Head, Self::TruncateHead) {
-		(self.0, (self.1,))
-	}
-
-	fn truncate_tail(self) -> (Self::TruncateTail, Self::Tail) {
-		((self.0,), self.1)
-	}
-}
-
 macro_rules! impl_tuple {
-	($t0:ident | $arity0:literal $(, $tn:ident | $arityn:literal)* $(,)?) => {
-		impl_tuple_recursion!($($tn | $arityn),*);
+	($t0:ident => $tn:ident; $t1:ident | $arity0:literal $(, $tx:ident | $arityn:literal)* $(,)?) => {
+		impl_tuple_recursion!($t0 => $tn; $($tx | $arityn),*);
 
-		impl<A, $t0 $(, $tn)*, Ω> private::Sealed for (A, $t0, $($tn,)* Ω) {}
-		impl<A, $t0 $(, $tn)*, Ω> Tuple for (A, $t0, $($tn,)* Ω) {
+		impl<A, $t1 $(, $tx)*, $tn> private::Sealed for (A, $t1, $($tx,)* $tn) {}
+		impl<A, $t1 $(, $tx)*, $tn> Tuple for (A, $t1, $($tx,)* $tn) {
 			const ARITY: usize = $arity0;
 		}
 
-		impl<A, $t0 $(, $tn)*, Ω> NonEmptyTuple for (A, $t0, $($tn,)* Ω) {
+		#[allow(non_snake_case)]
+		impl<A, $t1 $(, $tx)*, $tn> NonEmptyTuple for (A, $t1, $($tx,)* $tn) {
 			type Head = A;
-			type Tail = Ω;
-			type TruncateHead = ($t0, $($tn,)* Ω);
-			type TruncateTail = (A, $t0, $($tn,)*);
+			type Tail = $tn;
+			type TruncateHead = ($t1, $($tx,)* $tn);
+			type TruncateTail = (A, $t1, $($tx,)*);
 
 			fn head(&self) -> &Self::Head {
 				&self.0
@@ -281,62 +233,55 @@ macro_rules! impl_tuple {
 			}
 
 			fn tail(&self) -> &Self::Tail {
-				let (.., tail) = self;
-				tail
+				let (.., $tn) = self;
+				$tn
 			}
 
 			fn tail_mut(&mut self) -> &mut Self::Tail {
-				let (.., tail) = self;
-				tail
+				let (.., $tn) = self;
+				$tn
 			}
 
-			#[allow(non_snake_case)]
 			fn truncate_head(self) -> (Self::Head, Self::TruncateHead) {
-				let (head, $t0, $($tn,)* tail) = self;
-				(head, ($t0, $($tn,)* tail))
+				let ($t0, $t1, $($tx,)* $tn) = self;
+				($t0, ($t1, $($tx,)* $tn))
 			}
 
-			#[allow(non_snake_case)]
 			fn truncate_tail(self) -> (Self::TruncateTail, Self::Tail) {
-				let (head, $t0, $($tn,)* tail) = self;
-				((head, $t0 $(,$tn)*), tail)
+				let ($t0, $t1, $($tx,)* $tn) = self;
+				(($t0, $t1 $(,$tx)*), $tn)
 			}
 		}
 	};
 }
 
 macro_rules! impl_tuple_recursion {
-	() => {};
-	($t0:ident | $arity0:literal $(, $tn:ident | $arityn:literal)* $(,)?) => {
-		impl_tuple_recursion!($($tn | $arityn),*);
-
-		impl<A, $t0 $(, $tn)*, Ω> private::Sealed for (A, $t0, $($tn,)* Ω) {}
-		impl<A, $t0 $(, $tn)*, Ω> Tuple for (A, $t0, $($tn,)* Ω) {
-			const ARITY: usize = $arity0;
+	($t0:ident => $tn:ident $(;)?) => {
+		impl<$t0, $tn> private::Sealed for ($t0, $tn) {}
+		impl<$t0, $tn> Tuple for ($t0, $tn) {
+			const ARITY: usize = 2;
 		}
 
-		impl<A, $t0 $(, $tn)*, Ω> GrowableTuple for (A, $t0, $($tn,)* Ω) {
-			type Append<ඞ> = (A, $t0, $($tn,)* Ω, ඞ);
-			type Prepend<ඞ> = (ඞ, A, $t0, $($tn,)* Ω);
+		#[allow(non_snake_case)]
+		impl<$t0, $tn> GrowableTuple for ($t0, $tn) {
+			type Append<ඞ> = ($t0, $tn, ඞ);
+			type Prepend<ඞ> = (ඞ, $t0, $tn);
 
-			#[allow(non_snake_case)]
 			fn append<ඞ>(self, value: ඞ) -> Self::Append<ඞ> {
-				let (head, $t0, $($tn,)* tail) = self;
-				(head, $t0, $($tn,)* tail, value)
+				(self.0, self.1, value)
 			}
 
-			#[allow(non_snake_case)]
 			fn prepend<ඞ>(self, value: ඞ) -> Self::Prepend<ඞ> {
-				let (head, $t0, $($tn,)* tail) = self;
-				(value, head, $t0, $($tn,)* tail)
+				(value, self.0, self.1)
 			}
 		}
 
-		impl<A, $t0 $(, $tn)*, Ω> NonEmptyTuple for (A, $t0, $($tn,)* Ω) {
-			type Head = A;
-			type Tail = Ω;
-			type TruncateHead = ($t0, $($tn,)* Ω);
-			type TruncateTail = (A, $t0, $($tn,)*);
+		#[allow(non_snake_case)]
+		impl<$t0, $tn> NonEmptyTuple for ($t0, $tn) {
+			type Head = $t0;
+			type Tail = $tn;
+			type TruncateHead = ($tn,);
+			type TruncateTail = ($t0,);
 
 			fn head(&self) -> &Self::Head {
 				&self.0
@@ -347,31 +292,87 @@ macro_rules! impl_tuple_recursion {
 			}
 
 			fn tail(&self) -> &Self::Tail {
-				let (.., tail) = self;
-				tail
+				&self.1
 			}
 
 			fn tail_mut(&mut self) -> &mut Self::Tail {
-				let (.., tail) = self;
-				tail
+				&mut self.1
 			}
 
-			#[allow(non_snake_case)]
 			fn truncate_head(self) -> (Self::Head, Self::TruncateHead) {
-				let (head, $t0, $($tn,)* tail) = self;
-				(head, ($t0, $($tn,)* tail))
+				(self.0, (self.1,))
 			}
 
-			#[allow(non_snake_case)]
 			fn truncate_tail(self) -> (Self::TruncateTail, Self::Tail) {
-				let (head, $t0, $($tn,)* tail) = self;
-				((head, $t0 $(,$tn)*), tail)
+				((self.0,), self.1)
+			}
+		}
+	};
+	($t0:ident => $tn:ident; $t1:ident | $arity0:literal $(, $tx:ident | $arityn:literal)* $(,)?) => {
+		impl_tuple_recursion!($t0 => $tn; $($tx | $arityn),*);
+
+		impl<$t0, $t1 $(, $tx)*, $tn> private::Sealed for ($t0, $t1, $($tx,)* $tn) {}
+		impl<$t0, $t1 $(, $tx)*, $tn> Tuple for ($t0, $t1, $($tx,)* $tn) {
+			const ARITY: usize = $arity0;
+		}
+
+		#[allow(non_snake_case)]
+		impl<$t0, $t1 $(, $tx)*, $tn> GrowableTuple for ($t0, $t1, $($tx,)* $tn) {
+			type Append<ඞ> = ($t0, $t1, $($tx,)* $tn, ඞ);
+			type Prepend<ඞ> = (ඞ, $t0, $t1, $($tx,)* $tn);
+
+			fn append<ඞ>(self, value: ඞ) -> Self::Append<ඞ> {
+				let ($t0, $t1, $($tx,)* $tn) = self;
+				($t0, $t1, $($tx,)* $tn, value)
+			}
+
+			fn prepend<ඞ>(self, value: ඞ) -> Self::Prepend<ඞ> {
+				let ($t0, $t1, $($tx,)* $tn) = self;
+				(value, $t0, $t1, $($tx,)* $tn)
+			}
+		}
+
+		#[allow(non_snake_case)]
+		impl<$t0, $t1 $(, $tx)*, $tn> NonEmptyTuple for ($t0, $t1, $($tx,)* $tn) {
+			type Head = $t0;
+			type Tail = $tn;
+			type TruncateHead = ($t1, $($tx,)* $tn);
+			type TruncateTail = ($t0, $t1, $($tx,)*);
+
+			fn head(&self) -> &Self::Head {
+				&self.0
+			}
+
+			fn head_mut(&mut self) -> &mut Self::Head {
+				&mut self.0
+			}
+
+			fn tail(&self) -> &Self::Tail {
+				let (.., $tn) = self;
+				$tn
+			}
+
+			fn tail_mut(&mut self) -> &mut Self::Tail {
+				let (.., $tn) = self;
+				$tn
+			}
+
+			fn truncate_head(self) -> (Self::Head, Self::TruncateHead) {
+				let ($t0, $t1, $($tx,)* $tn) = self;
+				($t0, ($t1, $($tx,)* $tn))
+			}
+
+			fn truncate_tail(self) -> (Self::TruncateTail, Self::Tail) {
+				let ($t0, $t1, $($tx,)* $tn) = self;
+				(($t0, $t1 $(,$tx)*), $tn)
 			}
 		}
 	};
 }
 
 impl_tuple!(
+	A => Ω;
+
 	B | 50,
 	C | 49,
 	D | 48,
