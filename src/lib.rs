@@ -209,20 +209,20 @@ impl<A> NonEmptyTuple for (A,) {
 }
 
 macro_rules! impl_tuple {
-	($t0:ident => $tn:ident; $t1:ident | $arity0:literal $(, $tx:ident | $arityn:literal)* $(,)?) => {
-		impl_tuple_recursion!($t0 => $tn; $($tx | $arityn),*);
+	($t0:ident => $tn:ident; $t1:ident | $arity0:literal $(, $tx:ident | $arityx:literal)* $(,)?) => {
+		impl_tuple_recursion!($t0 => $tn; $($tx | $arityx),*);
 
-		impl<A, $t1 $(, $tx)*, $tn> private::Sealed for (A, $t1, $($tx,)* $tn) {}
-		impl<A, $t1 $(, $tx)*, $tn> Tuple for (A, $t1, $($tx,)* $tn) {
+		impl<$t0, $t1 $(, $tx)*, $tn> private::Sealed for ($t0, $t1, $($tx,)* $tn) {}
+		impl<$t0, $t1 $(, $tx)*, $tn> Tuple for ($t0, $t1, $($tx,)* $tn) {
 			const ARITY: usize = $arity0;
 		}
 
 		#[allow(non_snake_case)]
-		impl<A, $t1 $(, $tx)*, $tn> NonEmptyTuple for (A, $t1, $($tx,)* $tn) {
-			type Head = A;
+		impl<$t0, $t1 $(, $tx)*, $tn> NonEmptyTuple for ($t0, $t1, $($tx,)* $tn) {
+			type Head = $t0;
 			type Tail = $tn;
 			type TruncateHead = ($t1, $($tx,)* $tn);
-			type TruncateTail = (A, $t1, $($tx,)*);
+			type TruncateTail = ($t0, $t1, $($tx,)*);
 
 			fn head(&self) -> &Self::Head {
 				&self.0
@@ -308,8 +308,8 @@ macro_rules! impl_tuple_recursion {
 			}
 		}
 	};
-	($t0:ident => $tn:ident; $t1:ident | $arity0:literal $(, $tx:ident | $arityn:literal)* $(,)?) => {
-		impl_tuple_recursion!($t0 => $tn; $($tx | $arityn),*);
+	($t0:ident => $tn:ident; $t1:ident | $arity0:literal $(, $tx:ident | $arityx:literal)* $(,)?) => {
+		impl_tuple_recursion!($t0 => $tn; $($tx | $arityx),*);
 
 		impl<$t0, $t1 $(, $tx)*, $tn> private::Sealed for ($t0, $t1, $($tx,)* $tn) {}
 		impl<$t0, $t1 $(, $tx)*, $tn> Tuple for ($t0, $t1, $($tx,)* $tn) {
@@ -370,7 +370,7 @@ macro_rules! impl_tuple_recursion {
 	};
 }
 
-impl_tuple!(
+impl_tuple! {
 	A => Ω;
 
 	B | 50,
@@ -421,4 +421,4 @@ impl_tuple!(
 	Φ | 5,
 	Χ | 4,
 	Ψ | 3,
-);
+}
