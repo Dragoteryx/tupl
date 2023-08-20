@@ -32,3 +32,5 @@ assert_eq!((head, tuple), (1, (2, 3, 4)));
 let (tuple, tail) = tuple.truncate_tail();
 assert_eq!((tuple, tail), ((2, 3), 4));
 ```
+
+This crate also provides traits to manipulate functions.
