@@ -1,33 +1,54 @@
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![allow(non_snake_case, clippy::unused_unit)]
+#![forbid(unsafe_code)]
 #![no_std]
 
 //! A `#![no_std]` crate for handling Rust tuples using traits.
 
 /// Function related traits.
 pub mod fns;
-
-/// Whether or not this tuple type is the empty tuple.
-/// # Examples
-/// ```
-/// # use tupl::is_unit;
-/// assert!(is_unit::<()>());
-/// assert!(!is_unit::<(i32,)>());
-/// ```
-pub const fn is_unit<T: Tuple>() -> bool {
-	T::ARITY == 0
-}
+use fns::*;
 
 // Sealed trait.
-mod private {
+mod seal {
 	pub trait Sealed {}
 }
 
-/// A **sealed** trait representing tuples. It is implemented for tuples of arity 0 to 50.
-pub trait Tuple: private::Sealed {
+/// Get the type at a given index of tuple `T`.
+pub type TupleIndex<T, const INDEX: usize> = <T as IndexableTuple<INDEX>>::Value;
+
+/// Tuples of unknown size. Implemented for tuples of arity 0 to 32.
+pub trait DynTuple: seal::Sealed {
+	/// The [arity](https://en.wikipedia.org/wiki/Arity) (or length) of this tuple.
+	fn arity(&self) -> usize;
+}
+
+/// Tuples with a known size. Implemented for sized tuples of arity 0 to 32.
+pub trait Tuple: DynTuple + Sized {
 	/// The [arity](https://en.wikipedia.org/wiki/Arity) (or length) of this tuple.
 	const ARITY: usize;
 }
 
-/// A trait representing tuples that can grow. It is implemented for tuples of arity 0 to 49.
+/// Tuples that can be joined together. Implemented for tuples of arity 0 to 32.
+pub trait JoinableTuple<T: JoinableTuple<Self>>: Tuple {
+	/// This tuple joined with another tuple.
+	type Join: Tuple;
+
+	/// Joins this tuple with another tuple.
+	/// 
+	/// # Examples
+	/// 
+	/// ```
+	/// # use tupl::JoinableTuple;
+	/// let tuple = (1, 2);
+	/// let other = (3, 4);
+	/// let joined = tuple.join(other);
+	/// assert_eq!((1, 2, 3, 4), joined);
+	/// ```
+	fn join(self, other: T) -> Self::Join;
+}
+
+/// Tuples that can grow. Implemented for sized tuples of arity 0 to 31.
 pub trait GrowableTuple: Tuple {
 	/// This tuple with an extra element `T` appended to it.
 	type Append<T>: NonEmptyTuple<TruncateTail = Self, Tail = T>;
@@ -43,7 +64,7 @@ pub trait GrowableTuple: Tuple {
 	/// # use tupl::GrowableTuple;
 	/// let tuple = (1, 2);
 	/// let tuple = tuple.append(3);
-	/// assert_eq!(tuple, (1, 2, 3));
+	/// assert_eq!((1, 2, 3), tuple);
 	/// ```
 	fn append<T>(self, value: T) -> Self::Append<T>;
 
@@ -55,12 +76,12 @@ pub trait GrowableTuple: Tuple {
 	/// # use tupl::GrowableTuple;
 	/// let tuple = (2, 3);
 	/// let tuple = tuple.prepend(1);
-	/// assert_eq!(tuple, (1, 2, 3));
+	/// assert_eq!((1, 2, 3), tuple);
 	/// ```
 	fn prepend<T>(self, value: T) -> Self::Prepend<T>;
 }
 
-/// A trait representing tuples that are not empty. It is implemented for tuples of arity 1 to 50.
+/// Tuples that are not empty. Implemented for sized tuples of arity 1 to 32.
 pub trait NonEmptyTuple: Tuple {
 	/// The first element of this tuple.
 	type Head;
@@ -69,10 +90,10 @@ pub trait NonEmptyTuple: Tuple {
 	type Tail;
 
 	/// This tuple with its head truncated.
-	type TruncateHead: GrowableTuple;
+	type TruncateHead: GrowableTuple<Prepend<Self::Head> = Self>;
 
 	/// This tuple with its tail truncated.
-	type TruncateTail: GrowableTuple;
+	type TruncateTail: GrowableTuple<Append<Self::Tail> = Self>;
 
 	/// Returns a reference to the head of this tuple.
 	///
@@ -125,8 +146,8 @@ pub trait NonEmptyTuple: Tuple {
 	/// ```
 	/// # use tupl::NonEmptyTuple;
 	/// let tuple = (1, 2, 3);
-	/// let tuple = tuple.truncate_head();
-	/// assert_eq!(tuple, (1, (2, 3)));
+	/// let (head, tuple) = tuple.truncate_head();
+	/// assert_eq!((1, (2, 3)), (head, tuple));
 	/// ```
 	fn truncate_head(self) -> (Self::Head, Self::TruncateHead);
 
@@ -137,15 +158,92 @@ pub trait NonEmptyTuple: Tuple {
 	/// ```
 	/// # use tupl::NonEmptyTuple;
 	/// let tuple = (1, 2, 3);
-	/// let tuple = tuple.truncate_tail();
-	/// assert_eq!(tuple, ((1, 2), 3));
+	/// let (tuple, tail) = tuple.truncate_tail();
+	/// assert_eq!(((1, 2), 3), (tuple, tail));
 	/// ```
 	fn truncate_tail(self) -> (Self::TruncateTail, Self::Tail);
 }
 
+/// Tuples that not unary nor empty. Implemented for sized tuples of arity 2 to 32.
+pub trait NonUnaryTuple: NonEmptyTuple<TruncateHead: NonEmptyTuple<Tail = Self::Tail>, TruncateTail: NonEmptyTuple<Head = Self::Head>> {
+	/// This tuple with its head and tail truncated.
+	type TruncateHeadTail: GrowableTuple<Prepend<Self::Head> = Self::TruncateTail, Append<Self::Tail> = Self::TruncateHead>;
+
+	/// Returns a reference to the head and tail of this tuple.
+	/// 
+	/// # Examples
+	/// 
+	/// ```
+	/// # use tupl::NonUnaryTuple;
+	/// let tuple = (1, 2, 3, 4);
+	/// let (head, tail) = tuple.head_tail();
+	/// assert_eq!((&1, &4), (head, tail));
+	/// ```
+	fn head_tail(&self) -> (&Self::Head, &Self::Tail);
+
+	/// Returns a mutable reference to the head and tail of this tuple.
+	/// 
+	/// # Examples
+	/// 
+	/// ```
+	/// # use tupl::NonUnaryTuple;
+	/// let mut tuple = (1, 2, 3, 4);
+	/// let (head, tail) = tuple.head_tail_mut();
+	/// assert_eq!((&mut 1, &mut 4), (head, tail));
+	/// ```
+	fn head_tail_mut(&mut self) -> (&mut Self::Head, &mut Self::Tail);
+
+	/// Consumes this tuple and truncates its head and tail from the remaining elements.
+	/// 
+	/// # Examples
+	/// 
+	/// ```
+	/// # use tupl::NonUnaryTuple;
+	/// let tuple = (1, 2, 3, 4);
+	/// let (head, tuple, tail) = tuple.truncate_head_tail();
+	/// assert_eq!((1, (2, 3), 4), (head, tuple, tail));
+	/// ```
+	fn truncate_head_tail(self) -> (Self::Head, Self::TruncateHeadTail, Self::Tail);
+}
+
+/// Tuples that can be indexed. Implemented for sized tuples of arity 1 to 32.
+pub trait IndexableTuple<const INDEX: usize>: NonEmptyTuple {
+	/// The type of the value at the given index.
+	type Value;
+
+	/// Returns a reference to the value at the given index.
+	/// 
+	/// # Examples
+	/// 
+	/// ```
+	/// # use tupl::IndexableTuple;
+	/// let tuple = (1, 2, 3);
+	/// assert_eq!(&2, IndexableTuple::<1>::get(&tuple));
+	/// ```
+	fn get(&self) -> &Self::Value;
+
+	/// Returns a mutable reference to the value at the given index.
+	/// 
+	/// # Examples
+	/// 
+	/// ```
+	/// # use tupl::IndexableTuple;
+	/// let mut tuple = (1, 2, 3);
+	/// assert_eq!(&mut 2, IndexableTuple::<1>::get_mut(&mut tuple));
+	/// ```
+	fn get_mut(&mut self) -> &mut Self::Value;
+
+	/// Consumes this tuple and returns the value at the given index.
+	/// 
+	/// # Examples
+	/// 
+	/// ```
+	/// # use tupl::IndexableTuple;
+	/// let tuple = (1, 2, 3);
+	/// assert_eq!(2, IndexableTuple::<1>::into_index(tuple));
+	/// ```
+	fn into_index(self) -> Self::Value;
+}
+
 // Implements all traits.
-use core::ops::Fn as StdFn;
-use core::ops::FnMut as StdFnMut;
-use core::ops::FnOnce as StdFnOnce;
-use fns::{Fn, FnMut, FnOnce};
 tupl_macros::impl_traits!();

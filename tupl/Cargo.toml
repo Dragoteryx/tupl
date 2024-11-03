@@ -11,4 +11,4 @@ keywords = ["tuple"]
 
 [dependencies.tupl-macros]
 path = "../tupl-macros"
-version = "0.1"
+version = "0.5.0"

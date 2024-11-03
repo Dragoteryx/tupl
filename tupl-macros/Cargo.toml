@@ -1,16 +1,13 @@
 [package]
 name = "tupl-macros"
-description = "Implementation detail of the tupl crate."
+description = "Macros used by the tupl crate."
 authors = ["Dragoteryx"]
-version = "0.1.0"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.65"
 repository = "https://github.com/Dragoteryx/tupl"
 license = "MIT OR Apache-2.0"
-keywords = [
-	"tuple",
-	"proc-macro"
-]
+keywords = ["tuple", "proc-macro"]
 
 [lib]
 proc-macro = true

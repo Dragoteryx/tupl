@@ -1,18 +1,19 @@
 use super::*;
+use core::future::{Future, IntoFuture};
 
-/// Functions that return a [`Future`](core::future::Future).
+/// Functions that return a [`Future`].
 pub mod future;
 
-/// Functions that return an [`Iterator`](core::iter::Iterator).
+/// Functions that return an [`Iterator`].
 pub mod iter;
 
-/// Functions that return an [`Option`](core::option::Option).
+/// Functions that return an [`Option`].
 pub mod option;
 
-/// Functions that return a [`Result`](core::result::Result).
+/// Functions that return a [`Result`].
 pub mod result;
 
-/// A function that is called by value.
+/// Functions that are called by value.
 pub trait FnOnce<T: Tuple> {
 	/// The return type of this function.
 	type Output;
@@ -21,14 +22,14 @@ pub trait FnOnce<T: Tuple> {
 	fn call_once(self, args: T) -> Self::Output;
 }
 
-/// A function that is called by mutable reference.
+/// Functions that can be called by mutable reference.
 pub trait FnMut<T: Tuple>: FnOnce<T> {
 	/// Call the function by mutable reference.
 	fn call_mut(&mut self, args: T) -> Self::Output;
 }
 
-/// A function that is called by reference.
-pub trait Fn<T: Tuple>: FnOnce<T> {
+/// Functions that can be called by reference.
+pub trait Fn<T: Tuple>: FnMut<T> {
 	/// Call the function by reference.
 	fn call(&self, args: T) -> Self::Output;
 }
