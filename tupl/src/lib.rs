@@ -20,6 +20,14 @@ pub type TupleIndex<T, const INDEX: usize> = <T as IndexableTuple<INDEX>>::Value
 /// Tuples of unknown size. Implemented for tuples of arity 0 to 32.
 pub trait DynTuple: seal::Sealed {
 	/// The [arity](https://en.wikipedia.org/wiki/Arity) (or length) of this tuple.
+	/// 
+	/// # Examples
+	/// 
+	/// ```
+	/// # use tupl::DynTuple;
+	/// let tuple = (1, 2, 3);
+	/// assert_eq!(3, tuple.arity());
+	/// ```
 	fn arity(&self) -> usize;
 }
 
@@ -41,9 +49,9 @@ pub trait JoinableTuple<T: JoinableTuple<Self>>: Tuple {
 	/// ```
 	/// # use tupl::JoinableTuple;
 	/// let tuple = (1, 2);
-	/// let other = (3, 4);
+	/// let other = (3, 4, 5);
 	/// let joined = tuple.join(other);
-	/// assert_eq!((1, 2, 3, 4), joined);
+	/// assert_eq!((1, 2, 3, 4, 5), joined);
 	/// ```
 	fn join(self, other: T) -> Self::Join;
 }
