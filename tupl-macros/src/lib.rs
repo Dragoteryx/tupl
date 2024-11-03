@@ -1,4 +1,4 @@
-//! This crate contains the procedural macros used by the `tupl` crate.
+#![doc = include_str!("../README.md")]
 
 use proc_macro::TokenStream;
 

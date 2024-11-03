@@ -1,9 +1,7 @@
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![allow(non_snake_case, clippy::unused_unit)]
+#![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 #![no_std]
-
-//! A `#![no_std]` crate for handling Rust tuples using traits.
 
 /// Function related traits.
 pub mod fns;

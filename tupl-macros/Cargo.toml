@@ -2,7 +2,7 @@
 name = "tupl-macros"
 description = "Macros used by the tupl crate."
 authors = ["Dragoteryx"]
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.79"
 repository = "https://github.com/Dragoteryx/tupl"

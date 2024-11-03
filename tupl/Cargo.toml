@@ -2,7 +2,7 @@
 name = "tupl"
 description = "Perform generic operations on tuples."
 authors = ["Dragoteryx"]
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.79"
 repository = "https://github.com/Dragoteryx/tupl"
@@ -11,4 +11,4 @@ keywords = ["tuple"]
 
 [dependencies.tupl-macros]
 path = "../tupl-macros"
-version = "0.5.0"
+version = "0.5.1"
