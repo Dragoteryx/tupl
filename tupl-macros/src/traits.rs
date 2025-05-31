@@ -215,12 +215,12 @@ pub fn impl_indexable(idents: &[Ident]) -> TokenStream {
 				type Value = #ident;
 
 				#[inline]
-				fn get(&self) -> &Self::Value {
+				fn index_ref(&self) -> &Self::Value {
 					&self.#index
 				}
 
 				#[inline]
-				fn get_mut(&mut self) -> &mut Self::Value {
+				fn index_mut(&mut self) -> &mut Self::Value {
 					&mut self.#index
 				}
 
@@ -260,6 +260,32 @@ pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 			#[inline]
 			fn call(&self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
 				self(#(#idents,)*)
+			}
+		}
+
+		#[automatically_derived]
+		impl<#(#idents,)* F: core::ops::AsyncFnOnce(#(#idents,)*) -> Output, Output> AsyncFnOnce<(#(#idents,)*)> for F {
+			type Output = Output;
+
+			#[inline]
+			async fn async_call_once(self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
+				self(#(#idents,)*).await
+			}
+		}
+
+		#[automatically_derived]
+		impl<#(#idents,)* F: core::ops::AsyncFnMut(#(#idents,)*) -> Output, Output> AsyncFnMut<(#(#idents,)*)> for F {
+			#[inline]
+			async fn async_call_mut(&mut self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
+				self(#(#idents,)*).await
+			}
+		}
+
+		#[automatically_derived]
+		impl<#(#idents,)* F: core::ops::AsyncFn(#(#idents,)*) -> Output, Output> AsyncFn<(#(#idents,)*)> for F {
+			#[inline]
+			async fn async_call(&self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
+				self(#(#idents,)*).await
 			}
 		}
 	}

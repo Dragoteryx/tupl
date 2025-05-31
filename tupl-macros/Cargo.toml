@@ -2,9 +2,9 @@
 name = "tupl-macros"
 description = "Macros used by the tupl crate."
 authors = ["Dragoteryx"]
-version = "0.5.1"
-edition = "2021"
-rust-version = "1.79"
+version = "0.6.0"
+edition = "2024"
+rust-version = "1.85"
 repository = "https://github.com/Dragoteryx/tupl"
 license = "MIT OR Apache-2.0"
 keywords = ["tuple", "proc-macro"]
