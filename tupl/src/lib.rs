@@ -1,90 +1,119 @@
 #![allow(async_fn_in_trait, non_snake_case, clippy::unused_unit)]
+#![cfg_attr(nightly, feature(doc_auto_cfg))]
 #![doc = include_str!("../README.md")]
-#![forbid(unsafe_code)]
 #![no_std]
 
-use core::iter::Chain;
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+use core::convert::Infallible;
+use core::iter::FusedIterator;
 use core::iter::{Empty, empty};
-use core::iter::{Once, once};
+use core::mem::ManuallyDrop;
 
 /// Function related traits.
 pub mod fns;
 use fns::*;
 
+/// Visit heterogeneous tuples.
+pub mod visit;
+use visit::*;
+
 // Sealed trait.
 mod seal {
-	pub trait Sealed {}
+	pub trait Sealed: Sized {}
 }
 
-/// Returns `true` if the tuple is the unit tuple.
-///
-/// # Examples
-///
-/// ```
-/// # use tupl::is_unit;
-/// assert!(is_unit::<()>());
-/// assert!(!is_unit::<(i32, i32)>());
-/// ```
-#[inline]
-pub const fn is_unit<T: Tuple>() -> bool {
-	T::ARITY == 0
-}
-
-/// Get the type at a given index of tuple `T`.
-pub type TupleIndex<T, const INDEX: usize> = <T as IndexableTuple<INDEX>>::Value;
-
-/// Tuples of unknown size. Implemented for tuples of arity 0 to 32.
-pub trait DynTuple: seal::Sealed {
+/// All tuples. Implemented for tuples of arity 0 to 32.
+pub trait Tuple: seal::Sealed {
 	/// The [arity](https://en.wikipedia.org/wiki/Arity) (or length) of this tuple.
-	///
-	/// # Examples
-	///
-	/// ```
-	/// # use tupl::DynTuple;
-	/// let tuple = (1, 2, 3);
-	/// assert_eq!(3, tuple.arity());
-	/// ```
-	fn arity(&self) -> usize;
+	const ARITY: usize;
 
-	/// Returns `true` if this tuple is the unit tuple.
-	///
-	/// # Examples
+	/// Whether this tuple is the unit tuple or not.
+	const IS_UNIT: bool;
+
+	/// A tuple containing references to the elements of this tuple.
+	type Ref<'t>: Tuple
+	where
+		Self: 't;
+
+	/// A tuple containing mutable references to the elements of this tuple.
+	type Mut<'t>: Tuple
+	where
+		Self: 't;
+
+	/// Returns a tuple containing references to the elements of this tuple.
 	///
 	/// ```
-	/// # use tupl::DynTuple;
-	/// let tuple = ();
-	/// assert!(tuple.is_unit());
+	/// # use tupl::Tuple;
+	/// let tuple = (1, 2, 3);
+	/// let tuple_ref = tuple.as_ref();
+	/// assert_eq!(&1, tuple_ref.0);
+	/// assert_eq!(&2, tuple_ref.1);
+	/// assert_eq!(&3, tuple_ref.2);
+	/// ```
+	fn as_ref(&self) -> Self::Ref<'_>;
+
+	/// Returns a tuple containing mutable references to the elements of this tuple.
 	///
-	/// let tuple = (1, 2);
-	/// assert!(!tuple.is_unit());
+	/// ```
+	/// # use tupl::Tuple;
+	/// let mut tuple = (1, 2, 3);
+	/// let tuple_mut = tuple.as_mut();
+	/// assert_eq!(&mut 1, tuple_mut.0);
+	/// assert_eq!(&mut 2, tuple_mut.1);
+	/// assert_eq!(&mut 3, tuple_mut.2);
+	/// ```
+	fn as_mut(&mut self) -> Self::Mut<'_>;
+
+	/// Visits every element of this tuple using the provided visitor.
+	///
+	/// ```
+	/// # use tupl::Tuple;
+	/// # use tupl::visit::Visitor;
+	/// struct IncrementVisitor;
+	///
+	/// impl Visitor<&mut i32> for IncrementVisitor {
+	/// 	type Output = ();
+	///
+	/// 	fn visit(&mut self, value: &mut i32) {
+	/// 		*value += 1;
+	/// 	}
+	/// }
+	///
+	/// impl Visitor<&mut f64> for IncrementVisitor {
+	/// 	type Output = ();
+	///
+	/// 	fn visit(&mut self, value: &mut f64) {
+	/// 		*value += 1.0;
+	/// 	}
+	/// }
+	///
+	/// let mut tuple = (1, 2.0, 3);
+	/// let mut visitor = IncrementVisitor;
+	/// tuple.as_mut().visit(&mut visitor);
+	/// assert_eq!((2, 3.0, 4), tuple);
 	/// ```
 	#[inline]
-	fn is_unit(&self) -> bool {
-		self.arity() == 0
+	fn visit<V: TupleVisitor<Self>>(self, visitor: &mut V) -> V::Output {
+		visitor.visit_tuple(self)
+	}
+
+	#[inline]
+	fn try_visit<V: FallibleTupleVisitor<Self>>(
+		self,
+		visitor: &mut V,
+	) -> Result<V::Output, V::Error> {
+		visitor.try_visit_tuple(self)
 	}
 }
 
-/// Tuples with a known size. Implemented for sized tuples of arity 0 to 32.
-pub trait Tuple: DynTuple + Sized {
-	/// The [arity](https://en.wikipedia.org/wiki/Arity) (or length) of this tuple.
-	const ARITY: usize;
-}
-
-/// Tuples that can be converted into an iterator of T. Implemented for sized tuples of arity 0 to 32.
-pub trait TupleInto<T>: Tuple {
-	type Iterator: Iterator<Item = T>;
-
-	fn tuple_into(self) -> Self::Iterator;
-}
-
-/// Tuples that can be joined together. Implemented for sized tuples of arity 0 to 32.
+/// Tuples that can be joined together. Implemented for tuples of arity 0 to 32.
 pub trait JoinableTuple<T: JoinableTuple<Self>>: Tuple {
 	/// This tuple joined with another tuple.
 	type Join: Tuple;
 
 	/// Joins this tuple with another tuple.
-	///
-	/// # Examples
 	///
 	/// ```
 	/// # use tupl::JoinableTuple;
@@ -96,7 +125,7 @@ pub trait JoinableTuple<T: JoinableTuple<Self>>: Tuple {
 	fn join(self, other: T) -> Self::Join;
 }
 
-/// Tuples that can grow. Implemented for sized tuples of arity 0 to 31.
+/// Tuples that can grow. Implemented for tuples of arity 0 to 31.
 pub trait GrowableTuple: Tuple {
 	/// This tuple with an extra element `T` appended to it.
 	type Append<T>: NonEmptyTuple<TruncateTail = Self, Tail = T>;
@@ -105,8 +134,6 @@ pub trait GrowableTuple: Tuple {
 	type Prepend<T>: NonEmptyTuple<Head = T, TruncateHead = Self>;
 
 	/// Consumes this tuple and appends a value to it, returning a new tuple.
-	///
-	/// # Examples
 	///
 	/// ```
 	/// # use tupl::GrowableTuple;
@@ -118,8 +145,6 @@ pub trait GrowableTuple: Tuple {
 
 	/// Consumes this tuple and prepends a value to it, returning a new tuple.
 	///
-	/// # Examples
-	///
 	/// ```
 	/// # use tupl::GrowableTuple;
 	/// let tuple = (2, 3);
@@ -129,7 +154,7 @@ pub trait GrowableTuple: Tuple {
 	fn prepend<T>(self, value: T) -> Self::Prepend<T>;
 }
 
-/// Tuples that are not empty. Implemented for sized tuples of arity 1 to 32.
+/// Tuples that are not empty. Implemented for tuples of arity 1 to 32.
 pub trait NonEmptyTuple: Tuple {
 	/// The first element of this tuple.
 	type Head;
@@ -145,8 +170,6 @@ pub trait NonEmptyTuple: Tuple {
 
 	/// Returns a reference to the head of this tuple.
 	///
-	/// # Examples
-	///
 	/// ```
 	/// # use tupl::NonEmptyTuple;
 	/// let tuple = (1, 2, 3);
@@ -155,8 +178,6 @@ pub trait NonEmptyTuple: Tuple {
 	fn head(&self) -> &Self::Head;
 
 	/// Returns a mutable reference to the head of this tuple.
-	///
-	/// # Examples
 	///
 	/// ```
 	/// # use tupl::NonEmptyTuple;
@@ -167,8 +188,6 @@ pub trait NonEmptyTuple: Tuple {
 
 	/// Returns a reference to the tail of this tuple.
 	///
-	/// # Examples
-	///
 	/// ```
 	/// # use tupl::NonEmptyTuple;
 	/// let tuple = (1, 2, 3);
@@ -178,8 +197,6 @@ pub trait NonEmptyTuple: Tuple {
 
 	/// Returns a mutable reference to the tail of this tuple.
 	///
-	/// # Examples
-	///
 	/// ```
 	/// # use tupl::NonEmptyTuple;
 	/// let mut tuple = (1, 2, 3);
@@ -188,8 +205,6 @@ pub trait NonEmptyTuple: Tuple {
 	fn tail_mut(&mut self) -> &mut Self::Tail;
 
 	/// Consumes this tuple and truncates its head from the remaining elements.
-	///
-	/// # Examples
 	///
 	/// ```
 	/// # use tupl::NonEmptyTuple;
@@ -201,8 +216,6 @@ pub trait NonEmptyTuple: Tuple {
 
 	/// Consumes this tuple and truncates its tail from the remaining elements.
 	///
-	/// # Examples
-	///
 	/// ```
 	/// # use tupl::NonEmptyTuple;
 	/// let tuple = (1, 2, 3);
@@ -212,7 +225,7 @@ pub trait NonEmptyTuple: Tuple {
 	fn truncate_tail(self) -> (Self::TruncateTail, Self::Tail);
 }
 
-/// Tuples that not unary nor empty. Implemented for sized tuples of arity 2 to 32.
+/// Tuples that not unary nor empty. Implemented for tuples of arity 2 to 32.
 pub trait NonUnaryTuple:
 	NonEmptyTuple<
 		TruncateHead: NonEmptyTuple<TruncateTail = Self::TruncateHeadTail, Tail = Self::Tail>,
@@ -227,8 +240,6 @@ pub trait NonUnaryTuple:
 
 	/// Returns a reference to the head and tail of this tuple.
 	///
-	/// # Examples
-	///
 	/// ```
 	/// # use tupl::NonUnaryTuple;
 	/// let tuple = (1, 2, 3, 4);
@@ -238,8 +249,6 @@ pub trait NonUnaryTuple:
 	fn head_tail(&self) -> (&Self::Head, &Self::Tail);
 
 	/// Returns a mutable reference to the head and tail of this tuple.
-	///
-	/// # Examples
 	///
 	/// ```
 	/// # use tupl::NonUnaryTuple;
@@ -251,8 +260,6 @@ pub trait NonUnaryTuple:
 
 	/// Consumes this tuple and truncates its head and tail from the remaining elements.
 	///
-	/// # Examples
-	///
 	/// ```
 	/// # use tupl::NonUnaryTuple;
 	/// let tuple = (1, 2, 3, 4);
@@ -262,64 +269,104 @@ pub trait NonUnaryTuple:
 	fn truncate_head_tail(self) -> (Self::Head, Self::TruncateHeadTail, Self::Tail);
 }
 
-/// Tuples that can be indexed. Implemented for sized tuples of arity 1 to 32.
-pub trait IndexableTuple<const INDEX: usize>: NonEmptyTuple {
-	/// The type of the value at the given index.
-	type Value;
+/// Tuples that contain elements of a single type. Implemented for tuples of arity 0 to 32.
+pub trait HomogeneousTuple: Tuple {
+	/// An iterator over the elements of this tuple.
+	type IntoIter: Iterator<Item = Self::Item>;
 
-	/// Returns a reference to the value at the given index.
-	///
-	/// # Examples
+	/// An iterator over the elements of this tuple, yielding references.
+	type Iter<'t>: Iterator<Item = &'t Self::Item>
+	where
+		Self: 't;
+
+	/// An iterator over the elements of this tuple, yielding mutable references.
+	type IterMut<'t>: Iterator<Item = &'t mut Self::Item>
+	where
+		Self: 't;
+
+	/// The type of the elements of this tuple.
+	type Item;
+
+	/// Returns a reference to the element at the given index.
 	///
 	/// ```
-	/// # use tupl::IndexableTuple;
+	/// # use tupl::HomogeneousTuple;
 	/// let tuple = (1, 2, 3);
-	/// assert_eq!(&2, IndexableTuple::<1>::index_ref(&tuple));
+	/// assert_eq!(Some(&1), tuple.get(0));
+	/// assert_eq!(Some(&2), tuple.get(1));
+	/// assert_eq!(Some(&3), tuple.get(2));
+	/// assert_eq!(None, tuple.get(3));
 	/// ```
-	fn index_ref(&self) -> &Self::Value;
+	fn get(&self, index: usize) -> Option<&Self::Item>;
 
-	/// Returns a mutable reference to the value at the given index.
-	///
-	/// # Examples
+	/// Returns a mutable reference to the element at the given index.
 	///
 	/// ```
-	/// # use tupl::IndexableTuple;
+	/// # use tupl::HomogeneousTuple;
 	/// let mut tuple = (1, 2, 3);
-	/// assert_eq!(&mut 2, IndexableTuple::<1>::index_mut(&mut tuple));
+	/// *tuple.get_mut(0).unwrap() += 1;
+	/// *tuple.get_mut(1).unwrap() += 2;
+	/// *tuple.get_mut(2).unwrap() += 3;
+	/// assert_eq!((2, 4, 6), tuple);
 	/// ```
-	fn index_mut(&mut self) -> &mut Self::Value;
+	fn get_mut(&mut self, index: usize) -> Option<&mut Self::Item>;
 
-	/// Consumes this tuple and returns the value at the given index.
-	///
-	/// # Examples
+	/// Returns the value at the given index, consuming the tuple.
 	///
 	/// ```
-	/// # use tupl::IndexableTuple;
+	/// # use tupl::HomogeneousTuple;
 	/// let tuple = (1, 2, 3);
-	/// assert_eq!(2, IndexableTuple::<1>::into_index(tuple));
+	/// assert_eq!(Ok(2), tuple.into_inner(1));
 	/// ```
-	fn into_index(self) -> Self::Value;
+	fn into_inner(self, index: usize) -> Result<Self::Item, Self>;
+
+	fn into_iter(self) -> Self::IntoIter;
+
+	fn iter(&self) -> Self::Iter<'_>;
+
+	fn iter_mut(&mut self) -> Self::IterMut<'_>;
 }
 
 // Implements all relevant traits.
 tupl_macros::impl_traits!();
 
-// The base case of the TupleInto trait simply returns an empty iterator.
-impl<T> TupleInto<T> for () {
-	type Iterator = Empty<T>;
+pub struct TupleIter<T: HomogeneousTuple> {
+	tuple: ManuallyDrop<T>,
+	index: usize,
+}
+
+impl<T: HomogeneousTuple> FusedIterator for TupleIter<T> {}
+impl<T: HomogeneousTuple> ExactSizeIterator for TupleIter<T> {}
+impl<T: HomogeneousTuple> Iterator for TupleIter<T> {
+	type Item = T::Item;
 
 	#[inline]
-	fn tuple_into(self) -> Self::Iterator {
-		empty()
+	fn next(&mut self) -> Option<Self::Item> {
+		unsafe {
+			if let Some(ptr) = self.tuple.get(self.index) {
+				let item = core::ptr::read(ptr);
+				self.index += 1;
+				Some(item)
+			} else {
+				None
+			}
+		}
+	}
+
+	#[inline]
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		let remaining = T::ARITY - self.index;
+		(remaining, Some(remaining))
 	}
 }
 
-// Blanket implementation of the TupleInto trait for tuples of non-zero arity.
-impl<T, U: NonEmptyTuple<TruncateTail: TupleInto<T>, Tail: Into<T>>> TupleInto<T> for U {
-	type Iterator = Chain<<U::TruncateTail as TupleInto<T>>::Iterator, Once<T>>;
-
-	fn tuple_into(self) -> Self::Iterator {
-		let (tuple, tail) = self.truncate_tail();
-		tuple.tuple_into().chain(once(tail.into()))
+impl<T: HomogeneousTuple> Drop for TupleIter<T> {
+	fn drop(&mut self) {
+		unsafe {
+			while let Some(ptr) = self.tuple.get_mut(self.index) {
+				core::ptr::drop_in_place(ptr);
+				self.index += 1;
+			}
+		}
 	}
 }

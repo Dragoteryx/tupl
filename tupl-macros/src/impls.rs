@@ -1,11 +1,9 @@
 use proc_macro2::*;
 use quote::{format_ident, quote};
 
-pub const MAX_ARITY: usize = 32;
-
 pub fn impl_all_traits() -> TokenStream {
 	let mut tokens = TokenStream::new();
-	let idents = (1..=MAX_ARITY)
+	let idents = (1..=crate::MAX_ARITY)
 		.map(|i| format_ident!("T{i}"))
 		.collect::<Vec<_>>();
 
@@ -21,28 +19,38 @@ pub fn impl_traits(idents: &[Ident]) -> TokenStream {
 	tokens.extend(impl_joinable(idents));
 	tokens.extend(impl_growable(idents));
 	tokens.extend(impl_nonempty(idents));
-	tokens.extend(impl_indexable(idents));
+	tokens.extend(impl_homogeneous(idents));
+	tokens.extend(impl_visitor(idents));
 	tokens.extend(impl_fns(idents));
 	tokens
 }
 
 pub fn impl_tuple(idents: &[Ident]) -> TokenStream {
-	let arity = Literal::usize_suffixed(idents.len());
+	let is_unit = idents.is_empty();
+	let arity = idents.len();
+
 	quote! {
 		#[automatically_derived]
 		impl<#(#idents,)*> seal::Sealed for (#(#idents,)*) {}
 
 		#[automatically_derived]
-		impl<#(#idents,)*> DynTuple for (#(#idents,)*) {
-			#[inline]
-			fn arity(&self) -> usize {
-				#arity
-			}
-		}
-
-		#[automatically_derived]
 		impl<#(#idents,)*> Tuple for (#(#idents,)*) {
+			type Ref<'t> = (#(&'t #idents,)*) where Self: 't;
+			type Mut<'t> = (#(&'t mut #idents,)*) where Self: 't;
 			const ARITY: usize = #arity;
+			const IS_UNIT: bool = #is_unit;
+
+			#[inline]
+			fn as_ref(&self) -> Self::Ref<'_> {
+				let (#(#idents,)*) = self;
+				(#(#idents,)*)
+			}
+
+			#[inline]
+			fn as_mut(&mut self) -> Self::Mut<'_> {
+				let (#(#idents,)*) = self;
+				(#(#idents,)*)
+			}
 		}
 	}
 }
@@ -70,7 +78,7 @@ pub fn impl_joinable(idents: &[Ident]) -> TokenStream {
 }
 
 pub fn impl_growable(idents: &[Ident]) -> Option<TokenStream> {
-	if idents.len() == MAX_ARITY {
+	if idents.len() == crate::MAX_ARITY {
 		None
 	} else {
 		Some(quote! {
@@ -205,33 +213,152 @@ pub fn impl_nonempty(idents: &[Ident]) -> Option<TokenStream> {
 	}
 }
 
-pub fn impl_indexable(idents: &[Ident]) -> TokenStream {
-	let mut tokens = TokenStream::new();
-	for (i, ident) in idents.iter().enumerate() {
-		let index = Literal::usize_unsuffixed(i);
-		tokens.extend(quote! {
-			#[automatically_derived]
-			impl<#(#idents,)*> IndexableTuple<#index> for (#(#idents,)*) {
-				type Value = #ident;
+pub fn impl_homogeneous(idents: &[Ident]) -> TokenStream {
+	if idents.is_empty() {
+		quote! {
+			impl HomogeneousTuple for () {
+				type IterMut<'t> = Empty<&'t mut Infallible> where Self: 't;
+				type Iter<'t> = Empty<&'t Infallible> where Self: 't;
+				type IntoIter = Empty<Infallible>;
+				type Item = Infallible;
 
-				#[inline]
-				fn index_ref(&self) -> &Self::Value {
-					&self.#index
+				fn get(&self, _index: usize) -> Option<&Self::Item> {
+					None
 				}
 
-				#[inline]
-				fn index_mut(&mut self) -> &mut Self::Value {
-					&mut self.#index
+				fn get_mut(&mut self, _index: usize) -> Option<&mut Self::Item> {
+					None
 				}
 
-				#[inline]
-				fn into_index(self) -> Self::Value {
-					self.#index
+				fn into_inner(self, _index: usize) -> Result<Self::Item, Self> {
+					Err(self)
+				}
+
+				fn into_iter(self) -> Self::IntoIter {
+					empty()
+				}
+
+				fn iter(&self) -> Self::Iter<'_> {
+					empty()
+				}
+
+				fn iter_mut(&mut self) -> Self::IterMut<'_> {
+					empty()
 				}
 			}
-		});
-	}
+		}
+	} else {
+		let ident = format_ident!("T");
+		let idents = idents.iter().map(|_| &ident);
+		let indexes = (0..idents.len())
+			.map(Literal::usize_unsuffixed)
+			.collect::<Vec<_>>();
 
+		quote! {
+			impl<#ident> HomogeneousTuple for (#(#idents,)*) {
+				type IterMut<'t> = TupleIter<Self::Mut<'t>> where Self: 't;
+				type Iter<'t> = TupleIter<Self::Ref<'t>> where Self: 't;
+				type IntoIter = TupleIter<Self>;
+				type Item = #ident;
+
+				#[inline]
+				fn get(&self, index: usize) -> Option<&Self::Item> {
+					match index {
+						#(#indexes => Some(&self.#indexes),)*
+						_ => None,
+					}
+				}
+
+				#[inline]
+				fn get_mut(&mut self, index: usize) -> Option<&mut Self::Item> {
+					match index {
+						#(#indexes => Some(&mut self.#indexes),)*
+						_ => None,
+					}
+				}
+
+				#[inline]
+				fn into_inner(self, index: usize) -> Result<Self::Item, Self> {
+					match index {
+						#(#indexes => Ok(self.#indexes),)*
+						_ => Err(self),
+					}
+				}
+
+				#[inline]
+				fn into_iter(self) -> Self::IntoIter {
+					TupleIter {
+						tuple: ManuallyDrop::new(self),
+						index: 0,
+					}
+				}
+
+				#[inline]
+				fn iter(&self) -> Self::Iter<'_> {
+					self.as_ref().into_iter()
+				}
+
+				#[inline]
+				fn iter_mut(&mut self) -> Self::IterMut<'_> {
+					self.as_mut().into_iter()
+				}
+			}
+		}
+	}
+}
+
+pub fn impl_visitor(idents: &[Ident]) -> TokenStream {
+	let mut tokens = quote! {
+		#[automatically_derived]
+		impl<V, #(#idents,)*> TupleVisitor<(#(#idents,)*)> for V
+		where
+			#(V: Visitor<#idents>,)*
+		{
+			type Output = (#(<V as Visitor<#idents>>::Output,)*);
+
+			#[inline]
+			fn visit_tuple(&mut self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
+				(#(self.visit(#idents),)*)
+			}
+		}
+	};
+
+	let tokens2 = match idents {
+		[] => quote! {
+			#[automatically_derived]
+			impl<V> FallibleTupleVisitor<()> for V {
+				type Output = ();
+				type Error = Infallible;
+
+				#[inline]
+				fn try_visit_tuple(&mut self, (): ()) -> Result<Self::Output, Self::Error> {
+					Ok(())
+				}
+			}
+		},
+		[head, rest @ ..] => quote! {
+			#[automatically_derived]
+			impl<V, #head, #(#rest,)*> FallibleTupleVisitor<(#head, #(#rest,)*)> for V
+			where
+				V: FallibleVisitor<#head>,
+				#(V: FallibleVisitor<#rest>,)*
+				#(<V as FallibleVisitor<#head>>::Error: From<<V as FallibleVisitor<#rest>>::Error>,)*
+			{
+				type Output = (<V as FallibleVisitor<#head>>::Output, #(<V as FallibleVisitor<#rest>>::Output,)*);
+				type Error = <V as FallibleVisitor<#head>>::Error;
+
+				#[inline]
+				fn try_visit_tuple(&mut self, (#head, #(#rest,)*): (#head, #(#rest,)*)) -> Result<Self::Output, Self::Error> {
+					Ok((
+						self.try_visit(#head)?,
+						#(self.try_visit(#rest)?,)*
+					))
+				}
+			}
+		}
+	};
+
+	tokens.extend(tokens2);
 	tokens
 }
 
@@ -249,6 +376,7 @@ pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 
 		#[automatically_derived]
 		impl<#(#idents,)* F: core::ops::FnMut(#(#idents,)*) -> Output, Output> FnMut<(#(#idents,)*)> for F {
+
 			#[inline]
 			fn call_mut(&mut self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
 				self(#(#idents,)*)
@@ -257,6 +385,7 @@ pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 
 		#[automatically_derived]
 		impl<#(#idents,)* F: core::ops::Fn(#(#idents,)*) -> Output, Output> Fn<(#(#idents,)*)> for F {
+
 			#[inline]
 			fn call(&self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
 				self(#(#idents,)*)
@@ -275,6 +404,7 @@ pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 
 		#[automatically_derived]
 		impl<#(#idents,)* F: core::ops::AsyncFnMut(#(#idents,)*) -> Output, Output> AsyncFnMut<(#(#idents,)*)> for F {
+
 			#[inline]
 			async fn async_call_mut(&mut self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
 				self(#(#idents,)*).await
@@ -283,6 +413,7 @@ pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 
 		#[automatically_derived]
 		impl<#(#idents,)* F: core::ops::AsyncFn(#(#idents,)*) -> Output, Output> AsyncFn<(#(#idents,)*)> for F {
+
 			#[inline]
 			async fn async_call(&self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
 				self(#(#idents,)*).await
