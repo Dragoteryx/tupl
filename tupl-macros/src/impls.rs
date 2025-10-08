@@ -355,7 +355,7 @@ pub fn impl_visitor(idents: &[Ident]) -> TokenStream {
 					))
 				}
 			}
-		}
+		},
 	};
 
 	tokens.extend(tokens2);

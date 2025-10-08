@@ -1,5 +1,5 @@
 #![allow(async_fn_in_trait, non_snake_case, clippy::unused_unit)]
-#![cfg_attr(nightly, feature(doc_auto_cfg))]
+#![cfg_attr(nightly, feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 #![no_std]
 
@@ -95,15 +95,18 @@ pub trait Tuple: seal::Sealed {
 	/// assert_eq!((2, 3.0, 4), tuple);
 	/// ```
 	#[inline]
-	fn visit<V: TupleVisitor<Self>>(self, visitor: &mut V) -> V::Output {
+	fn visit<V>(self, visitor: &mut V) -> V::Output
+	where
+		V: TupleVisitor<Self>,
+	{
 		visitor.visit_tuple(self)
 	}
 
 	#[inline]
-	fn try_visit<V: FallibleTupleVisitor<Self>>(
-		self,
-		visitor: &mut V,
-	) -> Result<V::Output, V::Error> {
+	fn try_visit<V>(self, visitor: &mut V) -> Result<V::Output, V::Error>
+	where
+		V: FallibleTupleVisitor<Self>,
+	{
 		visitor.try_visit_tuple(self)
 	}
 }
