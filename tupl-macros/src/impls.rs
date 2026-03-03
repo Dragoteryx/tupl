@@ -19,14 +19,12 @@ pub fn impl_traits(idents: &[Ident]) -> TokenStream {
 	tokens.extend(impl_joinable(idents));
 	tokens.extend(impl_growable(idents));
 	tokens.extend(impl_nonempty(idents));
-	tokens.extend(impl_homogeneous(idents));
-	tokens.extend(impl_visitor(idents));
 	tokens.extend(impl_fns(idents));
 	tokens
 }
 
 pub fn impl_tuple(idents: &[Ident]) -> TokenStream {
-	let is_unit = idents.is_empty();
+	let unit = idents.is_empty();
 	let arity = idents.len();
 
 	quote! {
@@ -38,7 +36,7 @@ pub fn impl_tuple(idents: &[Ident]) -> TokenStream {
 			type Ref<'t> = (#(&'t #idents,)*) where Self: 't;
 			type Mut<'t> = (#(&'t mut #idents,)*) where Self: 't;
 			const ARITY: usize = #arity;
-			const IS_UNIT: bool = #is_unit;
+			const UNIT: bool = #unit;
 
 			#[inline]
 			fn as_ref(&self) -> Self::Ref<'_> {
@@ -108,7 +106,7 @@ pub fn impl_nonempty(idents: &[Ident]) -> Option<TokenStream> {
 		[] => None,
 		[ident] => Some(quote! {
 			#[automatically_derived]
-			impl<#ident> NonEmptyTuple for (#ident,) {
+			impl<#ident> NonUnitTuple for (#ident,) {
 				type Head = #ident;
 				type Tail = #ident;
 				type TruncateHead = ();
@@ -149,7 +147,7 @@ pub fn impl_nonempty(idents: &[Ident]) -> Option<TokenStream> {
 			let tail_idx = Literal::usize_unsuffixed(idents.len() - 1);
 			Some(quote! {
 				#[automatically_derived]
-				impl<#head, #(#rest,)* #tail> NonEmptyTuple for (#head, #(#rest,)* #tail) {
+				impl<#head, #(#rest,)* #tail> NonUnitTuple for (#head, #(#rest,)* #tail) {
 					type Head = #head;
 					type Tail = #tail;
 					type TruncateHead = (#(#rest,)* #tail,);
@@ -189,21 +187,21 @@ pub fn impl_nonempty(idents: &[Ident]) -> Option<TokenStream> {
 				}
 
 				#[automatically_derived]
-				impl<#head, #(#rest,)* #tail> NonUnaryTuple for (#head, #(#rest,)* #tail) {
-					type TruncateHeadTail = (#(#rest,)*);
+				impl<#head, #(#rest,)* #tail> PluralTuple for (#head, #(#rest,)* #tail) {
+					type TruncateEnds = (#(#rest,)*);
 
 					#[inline]
-					fn head_tail(&self) -> (&Self::Head, &Self::Tail) {
+					fn ends(&self) -> (&Self::Head, &Self::Tail) {
 						(&self.0, &self.#tail_idx)
 					}
 
 					#[inline]
-					fn head_tail_mut(&mut self) -> (&mut Self::Head, &mut Self::Tail) {
+					fn ends_mut(&mut self) -> (&mut Self::Head, &mut Self::Tail) {
 						(&mut self.0, &mut self.#tail_idx)
 					}
 
 					#[inline]
-					fn truncate_head_tail(self) -> (Self::Head, Self::TruncateHeadTail, Self::Tail) {
+					fn truncate_ends(self) -> (Self::Head, Self::TruncateEnds, Self::Tail) {
 						let (#head, #(#rest,)* #tail) = self;
 						(#head, (#(#rest,)*), #tail)
 					}
@@ -213,160 +211,11 @@ pub fn impl_nonempty(idents: &[Ident]) -> Option<TokenStream> {
 	}
 }
 
-pub fn impl_homogeneous(idents: &[Ident]) -> TokenStream {
-	if idents.is_empty() {
-		quote! {
-			impl HomogeneousTuple for () {
-				type IterMut<'t> = Empty<&'t mut Infallible> where Self: 't;
-				type Iter<'t> = Empty<&'t Infallible> where Self: 't;
-				type IntoIter = Empty<Infallible>;
-				type Item = Infallible;
-
-				fn get(&self, _index: usize) -> Option<&Self::Item> {
-					None
-				}
-
-				fn get_mut(&mut self, _index: usize) -> Option<&mut Self::Item> {
-					None
-				}
-
-				fn into_inner(self, _index: usize) -> Result<Self::Item, Self> {
-					Err(self)
-				}
-
-				fn into_iter(self) -> Self::IntoIter {
-					empty()
-				}
-
-				fn iter(&self) -> Self::Iter<'_> {
-					empty()
-				}
-
-				fn iter_mut(&mut self) -> Self::IterMut<'_> {
-					empty()
-				}
-			}
-		}
-	} else {
-		let ident = format_ident!("T");
-		let idents = idents.iter().map(|_| &ident);
-		let indexes = (0..idents.len())
-			.map(Literal::usize_unsuffixed)
-			.collect::<Vec<_>>();
-
-		quote! {
-			impl<#ident> HomogeneousTuple for (#(#idents,)*) {
-				type IterMut<'t> = TupleIter<Self::Mut<'t>> where Self: 't;
-				type Iter<'t> = TupleIter<Self::Ref<'t>> where Self: 't;
-				type IntoIter = TupleIter<Self>;
-				type Item = #ident;
-
-				#[inline]
-				fn get(&self, index: usize) -> Option<&Self::Item> {
-					match index {
-						#(#indexes => Some(&self.#indexes),)*
-						_ => None,
-					}
-				}
-
-				#[inline]
-				fn get_mut(&mut self, index: usize) -> Option<&mut Self::Item> {
-					match index {
-						#(#indexes => Some(&mut self.#indexes),)*
-						_ => None,
-					}
-				}
-
-				#[inline]
-				fn into_inner(self, index: usize) -> Result<Self::Item, Self> {
-					match index {
-						#(#indexes => Ok(self.#indexes),)*
-						_ => Err(self),
-					}
-				}
-
-				#[inline]
-				fn into_iter(self) -> Self::IntoIter {
-					TupleIter {
-						tuple: ManuallyDrop::new(self),
-						index: 0,
-					}
-				}
-
-				#[inline]
-				fn iter(&self) -> Self::Iter<'_> {
-					self.as_ref().into_iter()
-				}
-
-				#[inline]
-				fn iter_mut(&mut self) -> Self::IterMut<'_> {
-					self.as_mut().into_iter()
-				}
-			}
-		}
-	}
-}
-
-pub fn impl_visitor(idents: &[Ident]) -> TokenStream {
-	let mut tokens = quote! {
-		#[automatically_derived]
-		impl<V, #(#idents,)*> TupleVisitor<(#(#idents,)*)> for V
-		where
-			#(V: Visitor<#idents>,)*
-		{
-			type Output = (#(<V as Visitor<#idents>>::Output,)*);
-
-			#[inline]
-			fn visit_tuple(&mut self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
-				(#(self.visit(#idents),)*)
-			}
-		}
-	};
-
-	let tokens2 = match idents {
-		[] => quote! {
-			#[automatically_derived]
-			impl<V> FallibleTupleVisitor<()> for V {
-				type Output = ();
-				type Error = Infallible;
-
-				#[inline]
-				fn try_visit_tuple(&mut self, (): ()) -> Result<Self::Output, Self::Error> {
-					Ok(())
-				}
-			}
-		},
-		[head, rest @ ..] => quote! {
-			#[automatically_derived]
-			impl<V, #head, #(#rest,)*> FallibleTupleVisitor<(#head, #(#rest,)*)> for V
-			where
-				V: FallibleVisitor<#head>,
-				#(V: FallibleVisitor<#rest>,)*
-				#(<V as FallibleVisitor<#head>>::Error: From<<V as FallibleVisitor<#rest>>::Error>,)*
-			{
-				type Output = (<V as FallibleVisitor<#head>>::Output, #(<V as FallibleVisitor<#rest>>::Output,)*);
-				type Error = <V as FallibleVisitor<#head>>::Error;
-
-				#[inline]
-				fn try_visit_tuple(&mut self, (#head, #(#rest,)*): (#head, #(#rest,)*)) -> Result<Self::Output, Self::Error> {
-					Ok((
-						self.try_visit(#head)?,
-						#(self.try_visit(#rest)?,)*
-					))
-				}
-			}
-		},
-	};
-
-	tokens.extend(tokens2);
-	tokens
-}
-
 pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 	quote! {
 		#[automatically_derived]
-		impl<#(#idents,)* F: core::ops::FnOnce(#(#idents,)*) -> Output, Output> FnOnce<(#(#idents,)*)> for F {
-			type Output = Output;
+		impl<F: core::ops::FnOnce(#(#idents,)*) -> O, #(#idents,)* O> fns::FnOnce<(#(#idents,)*)> for F {
+			type Output = O;
 
 			#[inline]
 			fn call_once(self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
@@ -375,7 +224,7 @@ pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 		}
 
 		#[automatically_derived]
-		impl<#(#idents,)* F: core::ops::FnMut(#(#idents,)*) -> Output, Output> FnMut<(#(#idents,)*)> for F {
+		impl<F: core::ops::FnMut(#(#idents,)*) -> O, #(#idents,)* O> fns::FnMut<(#(#idents,)*)> for F {
 
 			#[inline]
 			fn call_mut(&mut self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
@@ -384,7 +233,7 @@ pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 		}
 
 		#[automatically_derived]
-		impl<#(#idents,)* F: core::ops::Fn(#(#idents,)*) -> Output, Output> Fn<(#(#idents,)*)> for F {
+		impl<F: core::ops::Fn(#(#idents,)*) -> O, #(#idents,)* O> fns::Fn<(#(#idents,)*)> for F {
 
 			#[inline]
 			fn call(&self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
@@ -393,8 +242,8 @@ pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 		}
 
 		#[automatically_derived]
-		impl<#(#idents,)* F: core::ops::AsyncFnOnce(#(#idents,)*) -> Output, Output> AsyncFnOnce<(#(#idents,)*)> for F {
-			type Output = Output;
+		impl<F: core::ops::AsyncFnOnce(#(#idents,)*) -> O, #(#idents,)* O> fns::AsyncFnOnce<(#(#idents,)*)> for F {
+			type Output = O;
 
 			#[inline]
 			async fn async_call_once(self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
@@ -403,7 +252,7 @@ pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 		}
 
 		#[automatically_derived]
-		impl<#(#idents,)* F: core::ops::AsyncFnMut(#(#idents,)*) -> Output, Output> AsyncFnMut<(#(#idents,)*)> for F {
+		impl<F: core::ops::AsyncFnMut(#(#idents,)*) -> O, #(#idents,)* O> fns::AsyncFnMut<(#(#idents,)*)> for F {
 
 			#[inline]
 			async fn async_call_mut(&mut self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {
@@ -412,7 +261,7 @@ pub fn impl_fns(idents: &[Ident]) -> TokenStream {
 		}
 
 		#[automatically_derived]
-		impl<#(#idents,)* F: core::ops::AsyncFn(#(#idents,)*) -> Output, Output> AsyncFn<(#(#idents,)*)> for F {
+		impl<F: core::ops::AsyncFn(#(#idents,)*) -> O, #(#idents,)* O> fns::AsyncFn<(#(#idents,)*)> for F {
 
 			#[inline]
 			async fn async_call(&self, (#(#idents,)*): (#(#idents,)*)) -> Self::Output {

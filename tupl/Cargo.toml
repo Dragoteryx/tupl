@@ -9,14 +9,6 @@ repository = "https://github.com/Dragoteryx/tupl"
 license = "MIT OR Apache-2.0"
 keywords = ["tuple"]
 
-[features]
-default = ["alloc"]
-alloc = []
-
-[dependencies.futures]
-default-features = false
-version = "0.3"
-
 [dependencies.tupl-macros]
 path = "../tupl-macros"
 version = "0.6"
